@@ -5,19 +5,14 @@ import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.plugins.defaultRequest
-import io.ktor.client.plugins.websocket.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
-import io.ktor.serialization.kotlinx.*
 import io.ktor.serialization.kotlinx.json.*
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.json.Json
 
 class JulesApiClient(
     private val apiKey: String,
-    private val proxyUrl: String? = null,
     httpClient: HttpClient? = null
 ) {
     private val cache = InMemoryCache<String, Any>()
@@ -25,14 +20,6 @@ class JulesApiClient(
     private val client = (httpClient ?: HttpClient()).config {
         install(ContentNegotiation) {
             json(Json {
-                ignoreUnknownKeys = true
-                isLenient = true
-                encodeDefaults = true
-                explicitNulls = false
-            })
-        }
-        install(WebSockets) {
-            contentConverter = KotlinxWebsocketSerializationConverter(Json {
                 ignoreUnknownKeys = true
                 isLenient = true
                 encodeDefaults = true
@@ -47,9 +34,6 @@ class JulesApiClient(
 
     private val baseUrl = "https://jules.googleapis.com/v1alpha"
 
-    // TODO: Implement caching system — cache GET responses (sessions, activities, sources)
-    //       with TTL-based invalidation and eviction on mutating calls (POST/DELETE).
-
     private suspend inline fun <reified T> HttpResponse.bodyOrThrow(): T {
         if (!status.isSuccess()) {
             throw Exception("API Error: ${status.value} - ${bodyAsText()}")
@@ -61,19 +45,24 @@ class JulesApiClient(
         val response = client.post("$baseUrl/sessions") {
             setBody(request)
         }
-        return response.bodyOrThrow()
+        return response.bodyOrThrow<Session>().also {
+            cache.removeMatching { it.startsWith("listSessions-") }
+        }
     }
 
-    suspend fun listSessions(pageSize: Int = 30, pageToken: String? = null, useCache: Boolean = true): ListSessionsResponse {
-        val cacheKey = "listSessions-$pageSize-$pageToken"
+    suspend fun listSessions(
+        pageSize: Int = 30,
+        pageToken: String? = null,
+        useCache: Boolean = true
+    ): ListSessionsResponse {
+        val safePageSize = pageSize.coerceIn(1, 100)
+        val cacheKey = "listSessions-$safePageSize-$pageToken"
         val cached = cache.get(cacheKey) as? ListSessionsResponse
         if (useCache && cached != null) return cached
 
         val response = client.get("$baseUrl/sessions") {
-            parameter("pageSize", pageSize)
-            if (pageToken != null) {
-                parameter("pageToken", pageToken)
-            }
+            parameter("pageSize", safePageSize)
+            pageToken?.let { parameter("pageToken", it) }
         }
         return response.bodyOrThrow<ListSessionsResponse>().also {
             cache.set(cacheKey, it)
@@ -87,16 +76,14 @@ class JulesApiClient(
             if (cached != null) return cached
         }
 
-        val response = client.get("$baseUrl/sessions/$sessionId") {
-        }
+        val response = client.get("$baseUrl/sessions/$sessionId")
         return response.bodyOrThrow<Session>().also {
             cache.set(cacheKey, it)
         }
     }
 
     suspend fun deleteSession(sessionId: String) {
-        val response = client.delete("$baseUrl/sessions/$sessionId") {
-        }
+        val response = client.delete("$baseUrl/sessions/$sessionId")
         if (!response.status.isSuccess()) {
             throw Exception("API Error: ${response.status.value} - ${response.bodyAsText()}")
         }
@@ -121,17 +108,24 @@ class JulesApiClient(
         }
     }
 
-    suspend fun listActivities(sessionId: String, pageSize: Int = 50, pageToken: String? = null, createTime: String? = null, forceRefresh: Boolean = false): ListActivitiesResponse {
-        val cacheKey = "listActivities-$sessionId-$pageSize-$pageToken-$createTime"
+    suspend fun listActivities(
+        sessionId: String,
+        pageSize: Int = 50,
+        pageToken: String? = null,
+        createTime: String? = null,
+        forceRefresh: Boolean = false
+    ): ListActivitiesResponse {
+        val safePageSize = pageSize.coerceIn(1, 100)
+        val cacheKey = "listActivities-$sessionId-$safePageSize-$pageToken-$createTime"
         if (!forceRefresh) {
             val cached = cache.get(cacheKey) as? ListActivitiesResponse
             if (cached != null) return cached
         }
 
         val response = client.get("$baseUrl/sessions/$sessionId/activities") {
-            parameter("pageSize", pageSize)
-            if (pageToken != null) parameter("pageToken", pageToken)
-            if (createTime != null) parameter("createTime", createTime)
+            parameter("pageSize", safePageSize)
+            pageToken?.let { parameter("pageToken", it) }
+            createTime?.let { parameter("createTime", it) }
         }
         return response.bodyOrThrow<ListActivitiesResponse>().also {
             cache.set(cacheKey, it)
@@ -143,26 +137,27 @@ class JulesApiClient(
         val cached = cache.get(cacheKey) as? Activity
         if (useCache && cached != null) return cached
 
-        val response = client.get("$baseUrl/sessions/$sessionId/activities/$activityId") {
-        }
+        val response = client.get("$baseUrl/sessions/$sessionId/activities/$activityId")
         return response.bodyOrThrow<Activity>().also {
             cache.set(cacheKey, it)
         }
     }
 
-    suspend fun listSources(pageSize: Int = 30, pageToken: String? = null, filter: String? = null, useCache: Boolean = true): ListSourcesResponse {
-        val cacheKey = "listSources-$pageSize-$pageToken-$filter"
+    suspend fun listSources(
+        pageSize: Int = 30,
+        pageToken: String? = null,
+        filter: String? = null,
+        useCache: Boolean = true
+    ): ListSourcesResponse {
+        val safePageSize = pageSize.coerceIn(1, 100)
+        val cacheKey = "listSources-$safePageSize-$pageToken-$filter"
         val cached = cache.get(cacheKey) as? ListSourcesResponse
         if (useCache && cached != null) return cached
 
         val response = client.get("$baseUrl/sources") {
-            parameter("pageSize", pageSize)
-            if (pageToken != null) {
-                parameter("pageToken", pageToken)
-            }
-            if (filter != null) {
-                parameter("filter", filter)
-            }
+            parameter("pageSize", safePageSize)
+            pageToken?.let { parameter("pageToken", it) }
+            filter?.let { parameter("filter", it) }
         }
         return response.bodyOrThrow<ListSourcesResponse>().also {
             cache.set(cacheKey, it)
@@ -174,29 +169,9 @@ class JulesApiClient(
         val cached = cache.get(cacheKey) as? Source
         if (useCache && cached != null) return cached
 
-        val response = client.get("$baseUrl/sources/$sourceId") {
-        }
+        val response = client.get("$baseUrl/sources/$sourceId")
         return response.bodyOrThrow<Source>().also {
             cache.set(cacheKey, it)
-        }
-    }
-
-    fun watchActivities(sessionId: String): Flow<Activity> = flow {
-        val wsBaseUrl = (proxyUrl ?: baseUrl)
-            .replace("https://", "wss://")
-            .replace("http://", "ws://")
-
-        client.webSocket("$wsBaseUrl/sessions/$sessionId/activities/watch", {
-            header("x-goog-api-key", apiKey)
-        }) {
-            while (true) {
-                try {
-                    val activity = receiveDeserialized<Activity>()
-                    emit(activity)
-                } catch (e: Exception) {
-                    break
-                }
-            }
         }
     }
 
