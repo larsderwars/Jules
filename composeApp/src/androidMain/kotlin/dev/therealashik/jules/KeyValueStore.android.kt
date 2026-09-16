@@ -4,8 +4,8 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import android.util.Base64
 import java.security.KeyStore
-import java.util.Base64
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -51,11 +51,11 @@ actual class KeyValueStore {
         cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
         val ciphertext = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
         val iv = cipher.iv
-        return Base64.getEncoder().encodeToString(iv + ciphertext)
+        return Base64.encodeToString(iv + ciphertext, Base64.NO_WRAP)
     }
 
     private fun decrypt(encoded: String): String {
-        val combined = Base64.getDecoder().decode(encoded)
+        val combined = Base64.decode(encoded, Base64.DEFAULT)
         require(combined.size > GCM_IV_LENGTH_BYTES) { "Invalid encrypted API key" }
         val iv = combined.copyOfRange(0, GCM_IV_LENGTH_BYTES)
         val ciphertext = combined.copyOfRange(GCM_IV_LENGTH_BYTES, combined.size)
