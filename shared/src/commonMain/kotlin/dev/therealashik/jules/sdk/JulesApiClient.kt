@@ -112,10 +112,13 @@ class JulesApiClient(
         }
     }
 
+    /**
+     * Approves the generated Jules plan.
+     * The current public REST API expects an empty request body.
+     * The legacy plan parameter is retained for source compatibility and is ignored.
+     */
     suspend fun approvePlan(sessionId: String, plan: Plan? = null): ApprovePlanResponse {
-        val response = client.post("$baseUrl/sessions/$sessionId:approvePlan") {
-            setBody(ApprovePlanRequest(plan = plan))
-        }
+        val response = client.post("$baseUrl/sessions/$sessionId:approvePlan")
         return response.bodyOrThrow<ApprovePlanResponse>().also {
             cache.removeMatching { key -> key.contains(sessionId) || key.startsWith("listSessions-") }
         }
