@@ -21,15 +21,16 @@ actual class KeyValueStore {
         }
 
         val stored = prefs.getString(key, null) ?: return defaultValue
-        return try {
-            decrypt(stored)
-        } catch (_: Exception) {
-            // Migrate a legacy plaintext API key once, if one exists.
+        if (!stored.startsWith(ENCRYPTED_PREFIX)) {
+            // Migrate a legacy plaintext API key once.
             if (stored.isNotBlank()) {
                 runCatching { putString(key, stored) }
             }
-            stored
+            return stored
         }
+
+        return runCatching { decrypt(stored.removePrefix(ENCRYPTED_PREFIX)) }
+            .getOrDefault(defaultValue)
     }
 
     actual fun putString(key: String, value: String) {
@@ -43,15 +44,16 @@ actual class KeyValueStore {
             return
         }
 
-        prefs.edit().putString(key, encrypt(value)).apply()
+        prefs.edit()
+            .putString(key, ENCRYPTED_PREFIX + encrypt(value))
+            .apply()
     }
 
     private fun encrypt(value: String): String {
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
         val ciphertext = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
-        val iv = cipher.iv
-        return Base64.encodeToString(iv + ciphertext, Base64.NO_WRAP)
+        return Base64.encodeToString(cipher.iv + ciphertext, Base64.NO_WRAP)
     }
 
     private fun decrypt(encoded: String): String {
@@ -86,6 +88,7 @@ actual class KeyValueStore {
         const val KEY_ALIAS = "jules_api_key_encryption"
         const val ANDROID_KEYSTORE = "AndroidKeyStore"
         const val TRANSFORMATION = "AES/GCM/NoPadding"
+        const val ENCRYPTED_PREFIX = "enc:v1:"
         const val GCM_IV_LENGTH_BYTES = 12
         const val GCM_TAG_LENGTH_BITS = 128
     }
