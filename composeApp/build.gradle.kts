@@ -1,8 +1,6 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-import java.util.Properties
-import java.io.FileInputStream
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -19,7 +17,7 @@ kotlin {
             jvmTarget.set(JvmTarget.JVM_11)
         }
     }
-    
+
     listOf(
         iosArm64(),
         iosSimulatorArm64()
@@ -29,20 +27,20 @@ kotlin {
             isStatic = true
         }
     }
-    
+
     jvm()
-    
+
     js {
         browser()
         binaries.executable()
     }
-    
+
     @OptIn(ExperimentalWasmDsl::class)
     wasmJs {
         browser()
         binaries.executable()
     }
-    
+
     sourceSets {
         androidMain.dependencies {
             implementation(libs.compose.uiToolingPreview)
@@ -77,35 +75,26 @@ android {
     namespace = "dev.therealashik.jules"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
-    val localProps = Properties()
-    val localPropsFile = project.rootProject.file("local.properties")
-    if (localPropsFile.exists()) {
-        localProps.load(FileInputStream(localPropsFile))
-    }
-    val apiKey = localProps.getProperty("jules.api.key", "")
-
-    buildFeatures {
-        buildConfig = true
-    }
-
     defaultConfig {
         applicationId = "dev.therealashik.jules"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "1.0"
-        buildConfigField("String", "JULES_API_KEY", "\"$apiKey\"")
+        versionCode = 2
+        versionName = "1.1"
     }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
     buildTypes {
         getByName("release") {
             isMinifyEnabled = false
         }
     }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
@@ -123,7 +112,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "dev.therealashik.jules"
-            packageVersion = "1.0.0"
+            packageVersion = "1.1.0"
         }
     }
 }
