@@ -1,3 +1,3 @@
 package dev.therealashik.jules
 
-actual fun getApiKey(): String = BuildConfig.JULES_API_KEY
+actual fun getApiKey(): String = KeyValueStore().getString("api_key")
