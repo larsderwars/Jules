@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.therealashik.jules.gallery.PromptItem
+import dev.therealashik.jules.sdk.models.AutomationMode
 import dev.therealashik.jules.sdk.models.Source
 import dev.therealashik.jules.sdk.models.GitHubBranch
 import dev.therealashik.jules.sdk.models.SourceContext
@@ -25,6 +26,8 @@ fun CreateSessionScreen(viewModel: JulesViewModel, state: UiState) {
     var title by remember { mutableStateOf("") }
     var prompt by remember { mutableStateOf("") }
     var showGalleryDialog by remember { mutableStateOf(false) }
+    var requirePlanApproval by remember { mutableStateOf(false) }
+    var autoCreatePr by remember { mutableStateOf(false) }
 
     var selectedSource by remember { mutableStateOf<Source?>(null) }
     var selectedBranch by remember { mutableStateOf<GitHubBranch?>(null) }
@@ -131,6 +134,35 @@ fun CreateSessionScreen(viewModel: JulesViewModel, state: UiState) {
                         }
                     }
 
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(Dimens.spacingL)) {
+                            Text("Session options", style = MaterialTheme.typography.titleMedium)
+                            ListItem(
+                                headlineContent = { Text(Strings.REQUIRE_PLAN_APPROVAL) },
+                                supportingContent = { Text(Strings.REQUIRE_PLAN_APPROVAL_HELP) },
+                                trailingContent = {
+                                    Switch(
+                                        checked = requirePlanApproval,
+                                        onCheckedChange = { requirePlanApproval = it }
+                                    )
+                                },
+                                colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent)
+                            )
+                            ListItem(
+                                headlineContent = { Text(Strings.AUTO_CREATE_PR) },
+                                supportingContent = { Text(Strings.AUTO_CREATE_PR_HELP) },
+                                trailingContent = {
+                                    Switch(
+                                        checked = autoCreatePr,
+                                        onCheckedChange = { autoCreatePr = it }
+                                    )
+                                },
+                                colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(Dimens.spacingL))
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -155,11 +187,7 @@ fun CreateSessionScreen(viewModel: JulesViewModel, state: UiState) {
                                     onClick = { viewModel.toggleGalleryPrompt(item) },
                                     label = { Text(item.title) },
                                     trailingIcon = {
-                                        Icon(
-                                            Icons.Filled.Close,
-                                            contentDescription = Strings.REMOVE,
-                                            modifier = Modifier.size(Dimens.spacingL)
-                                        )
+                                        Icon(Icons.Filled.Close, contentDescription = Strings.REMOVE, modifier = Modifier.size(Dimens.spacingL))
                                     }
                                 )
                             }
@@ -169,9 +197,7 @@ fun CreateSessionScreen(viewModel: JulesViewModel, state: UiState) {
                     OutlinedTextField(
                         value = prompt,
                         onValueChange = { prompt = it },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
+                        modifier = Modifier.fillMaxWidth().weight(1f),
                         minLines = 5,
                         maxLines = 10,
                         placeholder = { Text(Strings.WHAT_WOULD_YOU_LIKE_ME_TO_DO) }
@@ -187,11 +213,15 @@ fun CreateSessionScreen(viewModel: JulesViewModel, state: UiState) {
                                     }
                                 )
                             }
-                            viewModel.createSession(prompt, title, sourceContext)
+                            viewModel.createSession(
+                                prompt = prompt,
+                                title = title,
+                                sourceContext = sourceContext,
+                                requirePlanApproval = requirePlanApproval.takeIf { it },
+                                automationMode = AutomationMode.AUTO_CREATE_PR.takeIf { autoCreatePr }
+                            )
                         },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(Dimens.createButtonHeight),
+                        modifier = Modifier.fillMaxWidth().height(Dimens.createButtonHeight),
                         enabled = (prompt.isNotBlank() || state.selectedGalleryPrompts.isNotEmpty()) && !state.isLoading
                     ) {
                         if (state.isLoading) {
