@@ -27,7 +27,6 @@ import dev.therealashik.jules.gallery.PromptGalleryRepository
 import dev.therealashik.jules.ui.ThemePreference
 import dev.therealashik.jules.ui.CrashDialog
 
-// A purple seed color fallback
 private val LightColorScheme = lightColorScheme(
     primary = Color(0xFF6750A4),
     onPrimary = Color(0xFFFFFFFF),
@@ -99,7 +98,7 @@ fun App() {
 
     val promptGalleryRepository = remember { PromptGalleryRepository(store) }
     val savedKey = remember { store.getString("api_key") }
-    val apiClient = remember { JulesApiClient(savedKey, PROXY_URL) }
+    val apiClient = remember { JulesApiClient(savedKey) }
     val viewModel = viewModel { JulesViewModel(apiClient, savedKey, store, promptGalleryRepository) }
     val state by viewModel.state.collectAsState()
 
