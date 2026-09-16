@@ -90,4 +90,8 @@ object Strings {
     const val UP = "Up"
     const val DOWN = "Down"
     const val COMPACT_SESSION_LIST = "Compact session list"
+    const val REQUIRE_PLAN_APPROVAL = "Require plan approval"
+    const val REQUIRE_PLAN_APPROVAL_HELP = "Review Jules' plan before execution"
+    const val AUTO_CREATE_PR = "Auto-create pull request"
+    const val AUTO_CREATE_PR_HELP = "Ask Jules to create a PR when changes are ready"
 }
