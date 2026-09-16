@@ -68,9 +68,9 @@ private val DarkColorScheme = darkColorScheme(
     onError = Color(0xFF601410),
     errorContainer = Color(0xFF8C1D18),
     onErrorContainer = Color(0xFFF9DEDC),
-    background = Color(0xFF1C1B1F),
+    background = Color(0xFF000000),
     onBackground = Color(0xFFE6E1E5),
-    surface = Color(0xFF1C1B1F),
+    surface = Color(0xFF000000),
     onSurface = Color(0xFFE6E1E5),
 )
 
