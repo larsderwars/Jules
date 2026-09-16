@@ -7,6 +7,10 @@ on:
     branches: ["**"]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  actions: write
+
 jobs:
   android:
     runs-on: ubuntu-latest
@@ -23,13 +27,28 @@ jobs:
           restore-keys: gradle-${{ runner.os }}-
       - uses: gradle/actions/setup-gradle@v4
       - run: ./gradlew :composeApp:assembleDebug
-      # APKs are release assets, not long-lived Actions artifacts.
-      # Keep this temporary artifact only briefly for build verification.
-      - uses: actions/upload-artifact@v4
-        with:
-          name: android-apk
-          path: composeApp/build/outputs/apk/debug/*.apk
-          retention-days: 1
+      # APKs are published as GitHub Release assets, not Actions artifacts.
+
+  cleanup-apk-artifacts:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete all existing Android APK Actions artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --paginate \
+            -H 'Accept: application/vnd.github+json' \
+            "/repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
+            --jq '.artifacts[] | select(.name == "android-apk") | .id' \
+          | while read -r artifact_id; do
+              [ -z "$artifact_id" ] && continue
+              echo "Deleting android-apk artifact $artifact_id"
+              gh api --method DELETE \
+                -H 'Accept: application/vnd.github+json' \
+                "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}"
+            done
 
   desktop-linux:
     runs-on: ubuntu-latest
