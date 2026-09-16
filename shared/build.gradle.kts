@@ -1,3 +1,4 @@
+import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
@@ -13,21 +14,21 @@ kotlin {
             jvmTarget.set(JvmTarget.JVM_11)
         }
     }
-    
+
     iosArm64()
     iosSimulatorArm64()
-    
+
     jvm()
-    
+
     js {
         browser()
     }
-    
+
     @OptIn(ExperimentalWasmDsl::class)
     wasmJs {
         browser()
     }
-    
+
     sourceSets {
         androidMain.dependencies {
             implementation(libs.ktor.client.android)
@@ -49,7 +50,6 @@ kotlin {
             implementation(libs.ktor.client.content.negotiation)
             implementation(libs.ktor.serialization.kotlinx.json)
             implementation(libs.kotlinx.serialization.json)
-            implementation(libs.ktor.client.websockets)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
