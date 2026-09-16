@@ -5,14 +5,12 @@ import androidx.lifecycle.viewModelScope
 import dev.therealashik.jules.KeyValueStore
 import dev.therealashik.jules.sdk.JulesApiClient
 import dev.therealashik.jules.sdk.models.*
-import dev.therealashik.jules.PROXY_URL
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -86,16 +84,14 @@ class JulesViewModel(
     )
     val state: StateFlow<UiState> = _state.asStateFlow()
 
-    private var activityWatchJob: Job? = null
     private var pollingJob: Job? = null
-
     private val notificationService = NotificationService()
     private val sessionPollJobs = mutableMapOf<String, Job>()
 
     fun saveApiKey(key: String) {
         store?.putString("api_key", key)
         apiClient.close()
-        apiClient = JulesApiClient(key, PROXY_URL)
+        apiClient = JulesApiClient(key)
         _state.update { it.copy(apiKey = key) }
         navigate(Screen.SessionList)
     }
@@ -121,15 +117,12 @@ class JulesViewModel(
         }
         _state.update { it.copy(screen = screen, error = null) }
 
-        activityWatchJob?.cancel()
-        activityWatchJob = null
         stopPolling()
 
         when (screen) {
             is Screen.SessionList -> loadSessions()
             is Screen.SessionDetail -> {
                 loadActivities(screen.sessionId)
-                startWatchingActivities(screen.sessionId)
                 startPolling(screen.sessionId)
             }
             is Screen.CodeReview -> Unit
@@ -142,25 +135,6 @@ class JulesViewModel(
         }
     }
 
-    private fun startWatchingActivities(sessionId: String) {
-        activityWatchJob = viewModelScope.launch {
-            try {
-                apiClient.watchActivities(sessionId.normalizeSessionId()).collect { activity ->
-                    _state.update { state ->
-                        val currentIds = state.activities.map { it.id }.toSet()
-                        if (activity.id !in currentIds) {
-                            state.copy(activities = state.activities + activity)
-                        } else {
-                            state
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                // Silently handle WS errors, might want to retry or show a toast
-            }
-        }
-    }
-
     private fun startPolling(sessionId: String) {
         stopPolling()
         pollingJob = viewModelScope.launch {
@@ -169,11 +143,9 @@ class JulesViewModel(
                 try {
                     val session = apiClient.getSession(sessionId.normalizeSessionId(), forceRefresh = true)
                     _state.update { state ->
-                        state.copy(
-                            sessionsById = state.sessionsById + (sessionId to session)
-                        )
+                        state.copy(sessionsById = state.sessionsById + (sessionId to session))
                     }
-                    loadActivities(sessionId, forceRefresh = true, showLoading = false)
+                    loadActivities(sessionId, forceRefresh = true, showLoading = false, appendNew = true)
 
                     if (session.state == SessionState.COMPLETED ||
                         session.state == SessionState.FAILED ||
@@ -184,7 +156,7 @@ class JulesViewModel(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    // Ignore errors during polling
+                    // Ignore transient polling errors; the next cycle retries.
                 }
             }
         }
@@ -218,7 +190,7 @@ class JulesViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                // Ignore errors for sources
+                // Ignore errors for sources.
             }
         }
     }
@@ -226,11 +198,7 @@ class JulesViewModel(
     fun toggleGalleryPrompt(item: PromptItem) {
         _state.update { state ->
             val current = state.selectedGalleryPrompts.toMutableList()
-            if (current.contains(item)) {
-                current.remove(item)
-            } else {
-                current.add(item)
-            }
+            if (current.contains(item)) current.remove(item) else current.add(item)
             state.copy(selectedGalleryPrompts = current)
         }
     }
@@ -276,10 +244,7 @@ class JulesViewModel(
             } else {
                 current.selectedSessionIds + sessionId
             }
-            current.copy(
-                selectedSessionIds = newSelected,
-                isSelectionMode = newSelected.isNotEmpty()
-            )
+            current.copy(selectedSessionIds = newSelected, isSelectionMode = newSelected.isNotEmpty())
         }
     }
 
@@ -299,9 +264,7 @@ class JulesViewModel(
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true, error = null) }
             try {
-                idsToDelete.map { id ->
-                    launch { apiClient.deleteSession(id) }
-                }.forEach { it.join() }
+                idsToDelete.map { id -> launch { apiClient.deleteSession(id) } }.forEach { it.join() }
                 loadSessions()
                 clearSelection()
             } catch (e: CancellationException) {
@@ -328,13 +291,17 @@ class JulesViewModel(
         }
     }
 
-    fun createSession(prompt: String, title: String, sourceContext: SourceContext? = null) {
+    fun createSession(
+        prompt: String,
+        title: String,
+        sourceContext: SourceContext? = null,
+        requirePlanApproval: Boolean? = null,
+        automationMode: AutomationMode? = null
+    ) {
         val selectedPromptsText = state.value.selectedGalleryPrompts.joinToString("\n\n") { it.prompt }
         val finalPrompt = if (selectedPromptsText.isNotBlank()) {
             if (prompt.isNotBlank()) "$selectedPromptsText\n\n$prompt" else selectedPromptsText
-        } else {
-            prompt
-        }
+        } else prompt
 
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true, error = null) }
@@ -343,7 +310,9 @@ class JulesViewModel(
                     CreateSessionRequest(
                         prompt = finalPrompt,
                         title = title.takeIf { it.isNotBlank() },
-                        sourceContext = sourceContext
+                        sourceContext = sourceContext,
+                        requirePlanApproval = requirePlanApproval,
+                        automationMode = automationMode
                     )
                 )
                 _state.update { it.copy(isLoading = false) }
@@ -358,12 +327,33 @@ class JulesViewModel(
         }
     }
 
-    fun loadActivities(sessionId: String, forceRefresh: Boolean = false, showLoading: Boolean = true) {
+    fun loadActivities(
+        sessionId: String,
+        forceRefresh: Boolean = false,
+        showLoading: Boolean = true,
+        appendNew: Boolean = false
+    ) {
         viewModelScope.launch {
             if (showLoading) _state.update { it.copy(isLoading = true, error = null) }
             try {
-                val response = apiClient.listActivities(sessionId.normalizeSessionId(), pageSize = _state.value.pageSize, forceRefresh = forceRefresh)
-                _state.update { it.copy(isLoading = if (showLoading) false else it.isLoading, activities = response.activities) }
+                val latestCreateTime = if (appendNew) {
+                    state.value.activities.maxOfOrNull { it.createTime }?.takeIf { it.isNotBlank() }
+                } else null
+                val response = apiClient.listActivities(
+                    sessionId.normalizeSessionId(),
+                    pageSize = _state.value.pageSize,
+                    createTime = latestCreateTime,
+                    forceRefresh = forceRefresh
+                )
+                _state.update { state ->
+                    val activities = if (appendNew) {
+                        val existingIds = state.activities.map { it.id }.toSet()
+                        state.activities + response.activities.filter { it.id !in existingIds }
+                    } else {
+                        response.activities
+                    }
+                    state.copy(activities = activities, isLoading = if (showLoading) false else state.isLoading)
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -377,8 +367,8 @@ class JulesViewModel(
             _state.update { it.copy(isLoading = true, error = null) }
             try {
                 apiClient.sendMessage(sessionId.normalizeSessionId(), SendMessageRequest(prompt = prompt))
-                // Activities will be updated via WebSocket
                 _state.update { it.copy(isLoading = false) }
+                loadActivities(sessionId, forceRefresh = true, showLoading = false, appendNew = true)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -397,37 +387,35 @@ class JulesViewModel(
                     if (session.state != lastState) {
                         lastState = session.state
                         val statusText = when (session.state) {
-                            SessionState.QUEUED -> "⏳ Queued"
-                            SessionState.PLANNING -> "⚙️ Planning"
-                            SessionState.AWAITING_PLAN_APPROVAL -> "👀 Waiting for your approval"
-                            SessionState.AWAITING_USER_FEEDBACK -> "👀 Needs user feedback"
-                            SessionState.IN_PROGRESS -> "⚙️ Jules is working…"
-                            SessionState.PAUSED -> "⏸️ Paused"
-                            SessionState.COMPLETED -> "✅ Completed"
-                            SessionState.FAILED -> "❌ Failed"
+                            SessionState.QUEUED -> "Queued"
+                            SessionState.PLANNING -> "Planning"
+                            SessionState.AWAITING_PLAN_APPROVAL -> "Waiting for your approval"
+                            SessionState.AWAITING_USER_FEEDBACK -> "Needs user feedback"
+                            SessionState.IN_PROGRESS -> "Jules is working…"
+                            SessionState.PAUSED -> "Paused"
+                            SessionState.COMPLETED -> "Completed"
+                            SessionState.FAILED -> "Failed"
                             SessionState.STATE_UNSPECIFIED -> "Unknown"
                         }
                         notificationService.notify(sessionId, sessionTitle, statusText)
                     }
 
-                    if (session.state == SessionState.COMPLETED || session.state == SessionState.FAILED) {
-                        break
-                    }
+                    if (session.state == SessionState.COMPLETED || session.state == SessionState.FAILED) break
                 } catch (e: Exception) {
-                    // Ignore errors during polling, maybe the session was deleted or network is down
+                    // Ignore transient polling errors.
                 }
                 delay(5000)
             }
         }
     }
 
-    fun approvePlan(sessionId: String, plan: dev.therealashik.jules.sdk.models.Plan? = null) {
+    fun approvePlan(sessionId: String, plan: Plan? = null) {
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true, error = null) }
             try {
                 apiClient.approvePlan(sessionId.normalizeSessionId(), plan)
-                // Activities will be updated via WebSocket
                 _state.update { it.copy(isLoading = false) }
+                loadActivities(sessionId, forceRefresh = true, showLoading = false, appendNew = true)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -438,7 +426,7 @@ class JulesViewModel(
 
     override fun onCleared() {
         super.onCleared()
-        activityWatchJob?.cancel()
+        pollingJob?.cancel()
         sessionPollJobs.values.forEach { it.cancel() }
         sessionPollJobs.clear()
         apiClient.close()
