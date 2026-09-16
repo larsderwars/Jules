@@ -2,10 +2,10 @@ name: Build
 
 on:
   push:
-    branches: ["**"]        # যেকোনো ব্রাঞ্চে পুশ করলে চলবে
+    branches: ["**"]
   pull_request:
-    branches: ["**"]        # যেকোনো ব্রাঞ্চে PR করলে চলবে
-  workflow_dispatch:        # ম্যানুয়ালি রান করার অপশন 🔘
+    branches: ["**"]
+  workflow_dispatch:
 
 jobs:
   android:
@@ -23,10 +23,13 @@ jobs:
           restore-keys: gradle-${{ runner.os }}-
       - uses: gradle/actions/setup-gradle@v4
       - run: ./gradlew :composeApp:assembleDebug
+      # APKs are release assets, not long-lived Actions artifacts.
+      # Keep this temporary artifact only briefly for build verification.
       - uses: actions/upload-artifact@v4
         with:
           name: android-apk
           path: composeApp/build/outputs/apk/debug/*.apk
+          retention-days: 1
 
   desktop-linux:
     runs-on: ubuntu-latest
@@ -47,6 +50,7 @@ jobs:
         with:
           name: desktop-deb
           path: composeApp/build/compose/binaries/main/deb/*.deb
+          retention-days: 1
 
   desktop-windows:
     runs-on: windows-latest
@@ -67,6 +71,7 @@ jobs:
         with:
           name: desktop-msi
           path: composeApp/build/compose/binaries/main/msi/*.msi
+          retention-days: 1
 
   desktop-macos:
     runs-on: macos-latest
@@ -87,6 +92,7 @@ jobs:
         with:
           name: desktop-dmg
           path: composeApp/build/compose/binaries/main/dmg/*.dmg
+          retention-days: 1
 
   web-wasm:
     runs-on: ubuntu-latest
@@ -107,6 +113,7 @@ jobs:
         with:
           name: web-wasm
           path: composeApp/build/dist/wasmJs/productionExecutable/
+          retention-days: 1
 
   web-js:
     runs-on: ubuntu-latest
@@ -127,3 +134,4 @@ jobs:
         with:
           name: web-js
           path: composeApp/build/dist/js/productionExecutable/
+          retention-days: 1
